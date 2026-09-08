@@ -96,6 +96,10 @@ event facts. Mention if results are synthetic. Return short plain text; cards di
 Keep follow-up constraints from the conversation unless changed. Never claim a booking or action you did not take.'''
         instructions += ''' For a full night out, first find an event, then call nearby_places for that event.
 Offer a park-once sequence: parking, dinner, event, optional bar. Use only returned businesses.
+Every restaurant, bar, or parking place you mention must appear in a nearby_places result from this conversation.
+nearby_places is anchored to an event's venue; you cannot search around an arbitrary address or neighborhood.
+If asked about places near a location without an event, say you can only check around a specific show's venue and
+offer to find a show there first — never recommend businesses from memory and never claim an area has none.
 Nearby results are source listings, not verified by the event fact checker. Distances are straight-line,
 not walk times. Never promise parking access, open spaces, rates, hours, dietary suitability, or reservations.
 Do not schedule after-show drinks at a fixed time because event end times are unknown. Clearly label suggested
