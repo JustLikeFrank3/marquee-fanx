@@ -5,6 +5,7 @@ import {call} from './api';
 import type {Results,Report,Search} from './types';
 
 type Reply={nearby:NearbyData|null;reply:string;results:Results|null;report:Report|null;actions:{name:string;ok:boolean}[];model?:string|null};
+type Provider={id:string;label:string;configured:boolean;available:boolean};
 type Message={nearby?:NearbyData|null;role:'user'|'assistant';text:string;results?:Results|null;actions?:Reply['actions'];report?:Report|null;model?:string|null};
 // Only surface notes that change what the reader does next; mechanics live in the disclosure.
 function actionNotes(r:Results|null|undefined):string[]{
@@ -23,14 +24,20 @@ function badge(report:Report|null|undefined):string{
 }
 export default function Planner({context,onResults}:{context:Search&{budget_usd:number|null;party_size:number};onResults:(results:Results,report:Report|null)=>void}){
   const [configured,setConfigured]=useState<boolean|null>(null),[input,setInput]=useState(''),[modelLabel,setModelLabel]=useState('');
+  const [providers,setProviders]=useState<Provider[]>([]),[provider,setProvider]=useState<'auto'|'local'|'cloud'>('auto');
   const [messages,setMessages]=useState<Message[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [reset,setReset]=useState(true);
-  useEffect(()=>{let active=true;fetch('/api/chat/status').then(r=>{if(!r.ok)throw Error();return r.json();}).then(v=>{if(active){setConfigured(v.configured);setModelLabel(v.model||'');}}).catch(()=>{if(active)setError('Could not check the AI connection. Refresh to retry.');});return()=>{active=false;};},[]);
+  useEffect(()=>{
+    let active=true;
+    const check=()=>fetch('/api/chat/status').then(r=>{if(!r.ok)throw Error();return r.json();}).then(v=>{if(active){setConfigured(v.configured);setModelLabel(v.model||'');setProviders(v.providers||[]);}}).catch(()=>{if(active)setError('Could not check the AI connection. Refresh to retry.');});
+    check();const timer=setInterval(check,30000);
+    return()=>{active=false;clearInterval(timer);};
+  },[]);
   async function send(){
     const message=input.trim();if(!message||busy)return;
     setBusy(true);setError('');
     try{
-      const result=await call<Reply>('chat/message',{message,context,reset});
+      const result=await call<Reply>('chat/message',{message,context,reset,provider});
       setMessages(prev=>[...prev,{role:'user',text:message},{role:'assistant',text:result.reply,actions:result.actions,report:result.report,nearby:result.nearby,results:result.results,model:result.model}].slice(-16) as Message[]);
       setInput('');setReset(false);
       if(result.model)setModelLabel(result.model);
@@ -42,7 +49,7 @@ export default function Planner({context,onResults}:{context:Search&{budget_usd:
     }finally{setBusy(false);}
   }
   return <section className="wrap planner-section" aria-labelledby="planner-title">
-    <div className="planner"><div className="planner-intro"><p className="eyebrow orange">MEET YOUR NIGHT-OUT ASSISTANT</p><h2 id="planner-title">Say what sounds good.</h2><p>Tell Marquee what you’re in the mood for. Ask follow-up questions, compare options, and find your next night out.</p><span className="eyebrow">{configured===null?'CHECKING CONNECTION':configured?'AI + EVENT TOOLS':'AI CONNECTION NEEDED'}</span>{modelLabel&&<span className="badge model-badge" title="The model currently answering the planner chat">{modelLabel}</span>}</div>
+    <div className="planner"><div className="planner-intro"><p className="eyebrow orange">MEET YOUR NIGHT-OUT ASSISTANT</p><h2 id="planner-title">Say what sounds good.</h2><p>Tell Marquee what you’re in the mood for. Ask follow-up questions, compare options, and find your next night out.</p><span className="eyebrow">{configured===null?'CHECKING CONNECTION':configured?'AI + EVENT TOOLS':'AI CONNECTION NEEDED'}</span>{modelLabel&&<span className="badge model-badge" title="The model currently answering the planner chat">{modelLabel}</span>}{providers.length>0&&<div className="provider-switch">{(['auto','local','cloud'] as const).map(p=>{const meta=providers.find(x=>x.id===p);const off=p==='local'&&meta&&!meta.available;return <button key={p} type="button" disabled={busy} className={provider===p?'accent':''} aria-pressed={provider===p} title={p==='auto'?'Local when available, cloud otherwise':meta?.label} onClick={()=>setProvider(p)}>{p}{p==='local'&&<i className={`dot ${off?'':'up'}`} aria-hidden="true"/>}</button>;})}<small>{providers.find(x=>x.id==='local')?.available?'local model online':'local model offline'}</small></div>}</div>
     <div className="planner-conversation">
       {configured===false&&<p className="planner-notice">The AI planner is waiting for its model connection. You can use event search below in the meantime.</p>}
       {!messages.length&&<div className="planner-suggestions">{['Find concerts in Atlanta this weekend','What’s coming up at The Eastern?','Plan a night out with parking, dinner and a concert'].map(s=><button key={s} disabled={busy||!configured} onClick={()=>setInput(s)}>{s} ↗</button>)}</div>}

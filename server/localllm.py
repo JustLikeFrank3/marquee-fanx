@@ -1,5 +1,6 @@
 """OpenAI-compatible local model adapter (Ollama, LM Studio, llama.cpp). Unreachable is a distinct state so a configured fallback can take over."""
 import os
+import time
 import httpx
 
 
@@ -62,15 +63,16 @@ class LocalModel:
                                                                'parameters': t['parameters']}} for t in tools],
                    'max_tokens': 2200}
         try:
-            async with httpx.AsyncClient(timeout=140) as client:
+            # Tight connect timeout so a down server fails over fast; generation itself may be slow.
+            async with httpx.AsyncClient(timeout=httpx.Timeout(110, connect=3)) as client:
                 response = await client.post(_base() + '/chat/completions', json=payload, headers=self._headers())
                 response.raise_for_status()
                 message = response.json()['choices'][0]['message']
-        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+        except httpx.TransportError as exc:
             raise LocalUnavailable(str(exc)) from None
         except (httpx.HTTPError, ValueError, KeyError, IndexError):
-            # Any other local failure also yields to the fallback; the reply badge shows who answered.
-            raise LocalUnavailable('Local model request failed.') from None
+            # A reachable server that answers badly is a quality problem; do not mask it with the fallback.
+            raise ChatError('The local model returned an invalid response. Fix or restart the local server, or switch the planner provider.') from None
         output = []
         for i, call in enumerate(message.get('tool_calls') or []):
             function = call.get('function') or {}
@@ -86,11 +88,13 @@ class LocalModel:
 
 
 class FallbackModel:
-    """Try the local model first; hand the same conversation to the cloud model when local is unavailable."""
+    """Local first with cloud fallback on unavailability only; the user may pin either provider."""
+    supports_preference = True
 
     def __init__(self, primary, backup):
         self.primary, self.backup = primary, backup
         self.last = None
+        self._probe = (0.0, False)
 
     @property
     def label(self):
@@ -99,20 +103,38 @@ class FallbackModel:
     def configured(self):
         return self.primary.configured() or self.backup.configured()
 
-    async def active(self):
-        if await self.primary.available():
-            return self.primary.label
-        return self.backup.label
+    async def _up(self, max_age=30):
+        now = time.monotonic()
+        if now - self._probe[0] > max_age:
+            self._probe = (now, await self.primary.available())
+        return self._probe[1]
 
-    async def respond(self, items, instructions, tools):
+    async def status(self):
+        up = await self._up(max_age=5)
+        return {'model': self.last or (self.primary.label if up else self.backup.label),
+                'providers': [
+                    {'id': 'local', 'label': self.primary.label, 'configured': self.primary.configured(), 'available': up},
+                    {'id': 'cloud', 'label': self.backup.label, 'configured': self.backup.configured(), 'available': self.backup.configured()}]}
+
+    async def respond(self, items, instructions, tools, prefer='auto'):
         from .chat import ChatError
-        if self.primary.configured():
+        if prefer == 'local':
+            if not self.primary.configured():
+                raise ChatError('No local model is configured on this server.')
+            try:
+                output = await self.primary.respond(items, instructions, tools)
+            except LocalUnavailable:
+                self._probe = (time.monotonic(), False)
+                raise ChatError('The local model is unreachable. Start it, or switch the planner to auto or cloud.') from None
+            self.last = self.primary.label
+            return output
+        if prefer != 'cloud' and self.primary.configured() and await self._up():
             try:
                 output = await self.primary.respond(items, instructions, tools)
                 self.last = self.primary.label
                 return output
             except LocalUnavailable:
-                pass
+                self._probe = (time.monotonic(), False)
         if not self.backup.configured():
             raise ChatError('The local model is unreachable and no fallback model is configured.')
         output = await self.backup.respond(items, instructions, tools)

@@ -5,6 +5,7 @@ import os
 import time
 from collections import deque
 from datetime import date
+from typing import Literal
 import httpx
 from pydantic import Field
 from .models import StrictInput, Plan
@@ -17,6 +18,7 @@ class ChatInput(StrictInput):
     message: str = Field(min_length=1, max_length=2000)
     context: Plan
     reset: bool = False
+    provider: Literal['auto', 'local', 'cloud'] = 'auto'
 
 
 class ChatError(Exception):
@@ -126,7 +128,8 @@ Users can choose or skip nearby stops in the editable plan cards.'''
             if len(json.dumps(items)) > 150000:
                 raise ChatError('This conversation is full. Start a new conversation to continue.')
             self.calls.append(now)
-            output = await self.model.respond(items, instructions, tools)
+            kwargs = {'prefer': request.provider} if getattr(self.model, 'supports_preference', False) else {}
+            output = await self.model.respond(items, instructions, tools, **kwargs)
             items.extend(output)
             calls = [o for o in output if o.get('type') == 'function_call']
             if not calls:
