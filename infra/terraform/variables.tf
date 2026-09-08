@@ -33,31 +33,9 @@ variable "image_tag" {
   description = "Tag of the marquee image in ACR, set by scripts/deploy.ps1."
 }
 
-variable "seatgeek_client_id" {
-  type      = string
-  sensitive = true
-}
-
-variable "seatgeek_client_secret" {
-  type      = string
-  sensitive = true
-}
-
-variable "azure_maps_key" {
-  type      = string
-  sensitive = true
-}
-
-variable "lastfm_api_key" {
-  type      = string
-  sensitive = true
-}
-
-# Optional: joins the app to a tailnet so 'local' can reach a home GPU model server privately.
-variable "tailscale_auth_key" {
-  type      = string
-  sensitive = true
-  default   = ""
+variable "key_vault_name" {
+  type    = string
+  default = "marquee-kv-frank"
 }
 
 variable "local_llm_base_url" {

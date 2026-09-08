@@ -99,7 +99,7 @@ jobs:
         run: az acr build --registry marqueefrankacr --image marquee:${{ github.sha }} .
       - name: Roll out new revision
         run: >
-          az containerapp update -n marquee -g marquee-rg
+          az containerapp update -n marquee -g marquee-rg --container-name marquee
           --image marqueefrankacr.azurecr.io/marquee:${{ github.sha }} -o none
       - name: Smoke test
         run: |

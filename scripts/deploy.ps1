@@ -1,27 +1,7 @@
 # Build the Marquee image in ACR and roll out via Terraform. Rerun for every redeploy.
+# App secrets come from Key Vault (scripts/seed_keyvault.ps1), not this script.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-
-# Feed secrets from .env to Terraform without printing them.
-$secretMap = @{ 'SEATGEEK_CLIENT_ID'='seatgeek_client_id'; 'SEATGEEK_CLIENT_SECRET'='seatgeek_client_secret'
-                'AZURE_MAPS_KEY'='azure_maps_key'; 'LASTFM_API_KEY'='lastfm_api_key'
-                'TAILSCALE_AUTHKEY'='tailscale_auth_key' }
-$optional = @('tailscale_auth_key')
-foreach ($line in Get-Content (Join-Path $root '.env')) {
-    if ($line -match '^\s*#' -or $line -notmatch '=') { continue }
-    $name, $value = ($line -split '=', 2)
-    if ($secretMap.ContainsKey($name.Trim())) {
-        # dotenv strips surrounding quotes locally; do the same before seeding cloud secrets.
-        $clean = $value.Trim() -replace '^["'']|["'']$', ''
-        Set-Item -Path ("env:TF_VAR_" + $secretMap[$name.Trim()]) -Value $clean
-    }
-}
-foreach ($required in $secretMap.Values) {
-    if ($optional -contains $required) { continue }
-    if (-not (Get-Item "env:TF_VAR_$required" -ErrorAction SilentlyContinue)) {
-        throw "Missing .env entry for $required"
-    }
-}
 
 $tf = Join-Path $root 'infra\terraform'
 
@@ -67,7 +47,7 @@ try {
     terraform apply -input=false -auto-approve "-var=image_tag=$tag"
     if ($LASTEXITCODE) { throw 'Terraform apply failed.' }
     # Terraform ignores image changes after creation; roll the tag out directly.
-    az containerapp update -n marquee -g marquee-rg --image "$acr/marquee:$tag" -o none
+    az containerapp update -n marquee -g marquee-rg --container-name marquee --image "$acr/marquee:$tag" -o none
     if ($LASTEXITCODE) { throw 'Image rollout failed.' }
     Write-Host "Deployed marquee:$tag"
     Write-Host "App URL: $(terraform output -raw app_url)"

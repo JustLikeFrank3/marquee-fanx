@@ -26,6 +26,23 @@ data "azurerm_resource_group" "marquee" {
   name = var.resource_group_name
 }
 
+# Secrets live in Key Vault (seeded by scripts/seed_keyvault.ps1); Terraform only reads them.
+data "azurerm_key_vault" "main" {
+  name                = var.key_vault_name
+  resource_group_name = var.resource_group_name
+}
+
+data "azurerm_key_vault_secret" "app" {
+  for_each     = toset(["seatgeek-client-id", "seatgeek-client-secret", "azure-maps-key", "lastfm-api-key", "tailscale-auth-key"])
+  name         = each.key
+  key_vault_id = data.azurerm_key_vault.main.id
+}
+
+locals {
+  kv                 = { for name, secret in data.azurerm_key_vault_secret.app : name => secret.value }
+  tailscale_auth_key = local.kv["tailscale-auth-key"]
+}
+
 resource "azurerm_container_registry" "main" {
   name                = var.acr_name
   resource_group_name = data.azurerm_resource_group.marquee.name
@@ -93,25 +110,25 @@ resource "azurerm_container_app" "main" {
 
   secret {
     name  = "seatgeek-client-id"
-    value = var.seatgeek_client_id
+    value = local.kv["seatgeek-client-id"]
   }
   secret {
     name  = "seatgeek-client-secret"
-    value = var.seatgeek_client_secret
+    value = local.kv["seatgeek-client-secret"]
   }
   secret {
     name  = "azure-maps-key"
-    value = var.azure_maps_key
+    value = local.kv["azure-maps-key"]
   }
   secret {
     name  = "lastfm-api-key"
-    value = var.lastfm_api_key
+    value = local.kv["lastfm-api-key"]
   }
   dynamic "secret" {
-    for_each = var.tailscale_auth_key == "" ? [] : [1]
+    for_each = local.tailscale_auth_key == "" ? [] : [1]
     content {
       name  = "tailscale-auth-key"
-      value = var.tailscale_auth_key
+      value = local.tailscale_auth_key
     }
   }
 
@@ -141,10 +158,10 @@ resource "azurerm_container_app" "main" {
       }
       env {
         name  = "MARQUEE_AI_PROVIDER"
-        value = var.tailscale_auth_key == "" ? "azure_foundry" : "local_first"
+        value = local.tailscale_auth_key == "" ? "azure_foundry" : "local_first"
       }
       dynamic "env" {
-        for_each = var.tailscale_auth_key == "" ? {} : {
+        for_each = local.tailscale_auth_key == "" ? {} : {
           LOCAL_LLM_BASE_URL = var.local_llm_base_url
           LOCAL_LLM_MODEL    = var.local_llm_model
           LOCAL_LLM_PROXY    = "socks5://localhost:1055"
@@ -198,7 +215,7 @@ resource "azurerm_container_app" "main" {
 
     # Userspace Tailscale sidecar: exposes the tailnet to the app via a pod-local SOCKS proxy.
     dynamic "container" {
-      for_each = var.tailscale_auth_key == "" ? [] : [1]
+      for_each = local.tailscale_auth_key == "" ? [] : [1]
       content {
         name   = "tailscale"
         image  = "docker.io/tailscale/tailscale:stable"
@@ -219,6 +236,11 @@ resource "azurerm_container_app" "main" {
         env {
           name  = "TS_STATE_DIR"
           value = "mem:"
+        }
+        env {
+          # ACA leaks KUBERNETES_SERVICE_HOST; stop containerboot from trying kube state storage.
+          name  = "TS_KUBE_SECRET"
+          value = ""
         }
         env {
           name  = "TS_HOSTNAME"
