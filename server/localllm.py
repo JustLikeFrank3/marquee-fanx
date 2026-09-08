@@ -24,11 +24,16 @@ class LocalModel:
         key = os.getenv('LOCAL_LLM_API_KEY')
         return {'Authorization': 'Bearer ' + key} if key else {}
 
+    def _client(self, timeout):
+        # Optional SOCKS proxy (Tailscale sidecar) applies only to local-model traffic.
+        proxy = os.getenv('LOCAL_LLM_PROXY') or None
+        return httpx.AsyncClient(timeout=timeout, proxy=proxy)
+
     async def available(self):
         if not self.configured():
             return False
         try:
-            async with httpx.AsyncClient(timeout=2) as client:
+            async with self._client(2) as client:
                 response = await client.get(_base() + '/models', headers=self._headers())
                 return response.status_code < 500
         except httpx.HTTPError:
@@ -64,7 +69,7 @@ class LocalModel:
                    'max_tokens': 2200}
         try:
             # Tight connect timeout so a down server fails over fast; generation itself may be slow.
-            async with httpx.AsyncClient(timeout=httpx.Timeout(110, connect=3)) as client:
+            async with self._client(httpx.Timeout(110, connect=3)) as client:
                 response = await client.post(_base() + '/chat/completions', json=payload, headers=self._headers())
                 response.raise_for_status()
                 message = response.json()['choices'][0]['message']

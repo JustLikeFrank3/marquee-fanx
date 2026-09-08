@@ -52,3 +52,20 @@ variable "lastfm_api_key" {
   type      = string
   sensitive = true
 }
+
+# Optional: joins the app to a tailnet so 'local' can reach a home GPU model server privately.
+variable "tailscale_auth_key" {
+  type      = string
+  sensitive = true
+  default   = ""
+}
+
+variable "local_llm_base_url" {
+  type    = string
+  default = "http://100.88.74.98:8081/v1"
+}
+
+variable "local_llm_model" {
+  type    = string
+  default = "qwen3.8-27b"
+}

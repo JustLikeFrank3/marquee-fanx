@@ -107,6 +107,13 @@ resource "azurerm_container_app" "main" {
     name  = "lastfm-api-key"
     value = var.lastfm_api_key
   }
+  dynamic "secret" {
+    for_each = var.tailscale_auth_key == "" ? [] : [1]
+    content {
+      name  = "tailscale-auth-key"
+      value = var.tailscale_auth_key
+    }
+  }
 
   ingress {
     external_enabled = true
@@ -134,7 +141,18 @@ resource "azurerm_container_app" "main" {
       }
       env {
         name  = "MARQUEE_AI_PROVIDER"
-        value = "azure_foundry"
+        value = var.tailscale_auth_key == "" ? "azure_foundry" : "local_first"
+      }
+      dynamic "env" {
+        for_each = var.tailscale_auth_key == "" ? {} : {
+          LOCAL_LLM_BASE_URL = var.local_llm_base_url
+          LOCAL_LLM_MODEL    = var.local_llm_model
+          LOCAL_LLM_PROXY    = "socks5://localhost:1055"
+        }
+        content {
+          name  = env.key
+          value = env.value
+        }
       }
       env {
         name  = "FOUNDRY_PROJECT_ENDPOINT"
@@ -175,6 +193,37 @@ resource "azurerm_container_app" "main" {
       env {
         name        = "LASTFM_API_KEY"
         secret_name = "lastfm-api-key"
+      }
+    }
+
+    # Userspace Tailscale sidecar: exposes the tailnet to the app via a pod-local SOCKS proxy.
+    dynamic "container" {
+      for_each = var.tailscale_auth_key == "" ? [] : [1]
+      content {
+        name   = "tailscale"
+        image  = "docker.io/tailscale/tailscale:stable"
+        cpu    = 0.25
+        memory = "0.5Gi"
+        env {
+          name        = "TS_AUTHKEY"
+          secret_name = "tailscale-auth-key"
+        }
+        env {
+          name  = "TS_USERSPACE"
+          value = "true"
+        }
+        env {
+          name  = "TS_SOCKS5_SERVER"
+          value = "localhost:1055"
+        }
+        env {
+          name  = "TS_STATE_DIR"
+          value = "mem:"
+        }
+        env {
+          name  = "TS_HOSTNAME"
+          value = "marquee-cloud"
+        }
       }
     }
   }

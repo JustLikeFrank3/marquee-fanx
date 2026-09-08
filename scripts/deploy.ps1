@@ -4,7 +4,9 @@ $root = Split-Path $PSScriptRoot -Parent
 
 # Feed secrets from .env to Terraform without printing them.
 $secretMap = @{ 'SEATGEEK_CLIENT_ID'='seatgeek_client_id'; 'SEATGEEK_CLIENT_SECRET'='seatgeek_client_secret'
-                'AZURE_MAPS_KEY'='azure_maps_key'; 'LASTFM_API_KEY'='lastfm_api_key' }
+                'AZURE_MAPS_KEY'='azure_maps_key'; 'LASTFM_API_KEY'='lastfm_api_key'
+                'TAILSCALE_AUTHKEY'='tailscale_auth_key' }
+$optional = @('tailscale_auth_key')
 foreach ($line in Get-Content (Join-Path $root '.env')) {
     if ($line -match '^\s*#' -or $line -notmatch '=') { continue }
     $name, $value = ($line -split '=', 2)
@@ -15,6 +17,7 @@ foreach ($line in Get-Content (Join-Path $root '.env')) {
     }
 }
 foreach ($required in $secretMap.Values) {
+    if ($optional -contains $required) { continue }
     if (-not (Get-Item "env:TF_VAR_$required" -ErrorAction SilentlyContinue)) {
         throw "Missing .env entry for $required"
     }
