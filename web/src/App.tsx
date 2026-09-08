@@ -81,8 +81,8 @@ export default function App(){
           else{setEvents(value.events);setLoaded(true);setSelected([]);setPick(name==='plan_night'?value.events[0]||null:null);useEvidence(value);setScope(value.scope||'');}
           return value;
         });
-        if(!active){result.cleanup();return;}cleanup=result.cleanup;setAgent(result.count?`${result.count} tools registered`:'Browser agent unavailable');
-      }catch{if(active)setAgent('Agent connection unavailable');}
+        if(!active){result.cleanup();return;}cleanup=result.cleanup;setAgent(result.count?`Agent connected \u00b7 ${result.count} tools`:'WebMCP ready \u00b7 no browser agent');
+      }catch{if(active)setAgent('WebMCP ready \u00b7 no browser agent');}
     })();
     return ()=>{active=false;cleanup();};
   },[]);
@@ -98,7 +98,7 @@ export default function App(){
     setText(value);setHandles([e.evidence_id]);verifyText(value,[e.evidence_id]);
   }
   return <>
-    <header><a className="wordmark" href="#">Marquee</a><span className="eyebrow mode">{mode==='sample'?'SAMPLE DATA / REAL VERIFICATION':'LIVE EVENT DATA'}</span><span className={`agent ${agent.includes('tools registered')?'connected':''}`} title="The page works without a browser agent. Tool availability depends on your browser."><i/>{agent}</span></header>
+    <header><a className="wordmark" href="#">Marquee</a><span className="eyebrow mode">{mode==='sample'?'SAMPLE DATA / REAL VERIFICATION':'LIVE EVENT DATA'}</span><span className={`agent ${agent.includes('Agent connected')?'connected':''}`} title="This page exposes its event tools to browser-embedded AI agents over WebMCP. Everything works without one; an agent-capable browser can drive the page directly."><i/>{agent}</span></header>
     <main>
       <Planner context={{...search,...preferences,budget_usd:useBudget?budget:null,party_size:party}} onResults={(result,checked)=>{++latest.current;setBusy('');setEvents(result.events);setSelected([]);setLoaded(true);setScope(result.scope||'');setPick(result.events[0]||null);useEvidence(result);setReport(checked);}}/>
       {nearby&&<section className="wrap"><NearbyPlan key={nearby.fetched_at} data={nearby}/></section>}
