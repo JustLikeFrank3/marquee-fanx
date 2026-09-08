@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+.venv
+**/node_modules
+**/__pycache__
+web/dist
+design-reference
+infra/terraform/.terraform
+**/*.tfstate*
+**/*.tfvars
+*.zip
+.pytest_cache
+htmlcov

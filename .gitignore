@@ -1,0 +1,24 @@
+.env
+.env.*
+!.env.example
+.venv/
+node_modules/
+web/dist/
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+*.tsbuildinfo
+infra/*.json
+infra/terraform/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.zip
+*.log
+design-reference/
+# Internal working notes, not part of the public project
+HANDOFF.md
+BUILD_NOTES.md
+API_ACCESS.md
+Claude outputs/
