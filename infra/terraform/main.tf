@@ -121,7 +121,6 @@ resource "azurerm_container_app" "main" {
       image  = "${azurerm_container_registry.main.login_server}/marquee:${var.image_tag}"
       cpu    = 0.25
       memory = "0.5Gi"
-
       env {
         name  = "MARQUEE_DATA_MODE"
         value = "live"
@@ -171,5 +170,10 @@ resource "azurerm_container_app" "main" {
         secret_name = "lastfm-api-key"
       }
     }
+  }
+
+  # Image tags roll out via CI (az containerapp update); Terraform manages everything else.
+  lifecycle {
+    ignore_changes = [template[0].container[0].image]
   }
 }

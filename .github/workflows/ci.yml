@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    name: Backend tests + coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt pytest-cov
+      - name: Pytest with coverage gate
+        run: python -m pytest server/tests -q --cov=server --cov-report=term --cov-fail-under=90
+
+  frontend:
+    name: Frontend tests + build + bundle scan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Bundle credential scan
+        working-directory: .
+        run: |
+          pip install python-dotenv
+          python scripts/check_bundle.py
+
+  security:
+    name: Dependency + secret scans
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: pip-audit (locked backend dependencies)
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.lock.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: npm audit (high and above)
+        working-directory: web
+        run: npm audit --audit-level=high
+      - name: gitleaks secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy:
+    name: Deploy to Azure Container Apps
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [backend, frontend, security]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure login (OIDC, no stored credentials)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Build image in ACR
+        run: az acr build --registry marqueefrankacr --image marquee:${{ github.sha }} .
+      - name: Roll out new revision
+        run: >
+          az containerapp update -n marquee -g marquee-rg
+          --image marqueefrankacr.azurecr.io/marquee:${{ github.sha }} -o none
+      - name: Smoke test
+        run: |
+          sleep 20
+          status=$(curl -fsS https://marquee.icycoast-2869d7a0.eastus2.azurecontainerapps.io/api/health)
+          echo "$status"
+          echo "$status" | grep -q '"status":"ok"'
+          echo "$status" | grep -q '"mode":"live"'

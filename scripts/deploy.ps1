@@ -63,6 +63,9 @@ try {
 
     terraform apply -input=false -auto-approve "-var=image_tag=$tag"
     if ($LASTEXITCODE) { throw 'Terraform apply failed.' }
+    # Terraform ignores image changes after creation; roll the tag out directly.
+    az containerapp update -n marquee -g marquee-rg --image "$acr/marquee:$tag" -o none
+    if ($LASTEXITCODE) { throw 'Image rollout failed.' }
     Write-Host "Deployed marquee:$tag"
     Write-Host "App URL: $(terraform output -raw app_url)"
 }
