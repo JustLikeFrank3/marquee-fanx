@@ -24,6 +24,8 @@ def test_items_translate_to_chat_messages(monkeypatch):
 
 class FakeResponse:
     def __init__(self, payload, status=200): self.payload, self.status_code = payload, status
+    @property
+    def text(self): return str(self.payload)
     def json(self): return self.payload
     def raise_for_status(self):
         if self.status_code >= 400:

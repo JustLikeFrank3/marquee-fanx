@@ -1,7 +1,10 @@
 """OpenAI-compatible local model adapter (Ollama, LM Studio, llama.cpp). Unreachable is a distinct state so a configured fallback can take over."""
+import logging
 import os
 import time
 import httpx
+
+log = logging.getLogger('marquee.local')
 
 
 class LocalUnavailable(Exception):
@@ -40,6 +43,8 @@ class LocalModel:
             return False
 
     def _messages(self, items, instructions):
+        # Local context windows are small; huge tool outputs are the usual overflow cause.
+        cap = int(os.getenv('LOCAL_LLM_TOOL_OUTPUT_CHARS', '6000'))
         messages = [{'role': 'system', 'content': instructions}]
         for item in items:
             kind = item.get('type')
@@ -48,7 +53,10 @@ class LocalModel:
                                  'tool_calls': [{'id': item.get('call_id', 'call_0'), 'type': 'function',
                                                  'function': {'name': item.get('name', ''), 'arguments': item.get('arguments', '{}')}}]})
             elif kind == 'function_call_output':
-                messages.append({'role': 'tool', 'tool_call_id': item.get('call_id', ''), 'content': item.get('output', '')})
+                output = item.get('output', '')
+                if len(output) > cap:
+                    output = output[:cap] + '\u2026 [truncated to fit the local model context; facts above are intact]'
+                messages.append({'role': 'tool', 'tool_call_id': item.get('call_id', ''), 'content': output})
             elif kind == 'message' or ('role' in item and 'type' not in item):
                 content = item.get('content')
                 if isinstance(content, list):
@@ -71,10 +79,15 @@ class LocalModel:
             # Tight connect timeout so a down server fails over fast; generation itself may be slow.
             async with self._client(httpx.Timeout(110, connect=3)) as client:
                 response = await client.post(_base() + '/chat/completions', json=payload, headers=self._headers())
+                if response.status_code >= 400:
+                    # Cause stays server-side; users get an actionable summary, never the body.
+                    log.warning('Local model HTTP %s: %.300s', response.status_code, response.text)
                 response.raise_for_status()
                 message = response.json()['choices'][0]['message']
         except httpx.TransportError as exc:
             raise LocalUnavailable(str(exc)) from None
+        except httpx.HTTPStatusError:
+            raise ChatError('The local model rejected the request. Long conversations can exceed its context window \u2014 start a new conversation, or switch the planner to cloud.') from None
         except (httpx.HTTPError, ValueError, KeyError, IndexError):
             # A reachable server that answers badly is a quality problem; do not mask it with the fallback.
             raise ChatError('The local model returned an invalid response. Fix or restart the local server, or switch the planner provider.') from None
