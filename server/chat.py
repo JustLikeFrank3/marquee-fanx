@@ -24,6 +24,10 @@ class ChatError(Exception):
 
 
 class ResponsesModel:
+    @property
+    def label(self):
+        return 'OpenAI \u00b7 ' + os.getenv('OPENAI_MODEL', '')
+
     def configured(self):
         return bool(os.getenv('OPENAI_API_KEY') and os.getenv('OPENAI_MODEL'))
 
@@ -50,8 +54,11 @@ class ResponsesModel:
 class ChatService:
     def __init__(self, service, store, model=None):
         from .foundry import FoundryModel
+        from .localllm import LocalModel, FallbackModel
         self.service, self.store = service, store
-        self.model = model or (FoundryModel() if os.getenv('MARQUEE_AI_PROVIDER')=='azure_foundry' else ResponsesModel())
+        provider = os.getenv('MARQUEE_AI_PROVIDER')
+        cloud = FoundryModel() if provider in ('azure_foundry', 'local_first') else ResponsesModel()
+        self.model = model or (FallbackModel(LocalModel(), cloud) if provider == 'local_first' else cloud)
         self.calls = deque()
 
     async def send(self, request, token):
@@ -128,7 +135,8 @@ Users can choose or skip nearby stops in the editable plan cards.'''
                 if not reply.strip():
                     raise ChatError('The planner returned no reply. Please retry.')
                 session['chat_turns'] = (turns + [items[start:]])[-4:]
-                return {'reply':reply, 'results':results, 'report':report, 'actions':actions,'nearby':nearby}
+                model_label = getattr(self.model, 'last', None) or getattr(self.model, 'label', None)
+                return {'reply':reply, 'results':results, 'report':report, 'actions':actions,'nearby':nearby,'model':model_label}
             if len(calls)>5 or tool_count+len(calls)>8:
                 raise ChatError('The planner requested too many searches. Please narrow the request.')
             for call in calls:

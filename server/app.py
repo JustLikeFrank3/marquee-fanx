@@ -77,7 +77,8 @@ async def session():
 
 @app.get('/api/chat/status')
 async def chat_status():
-    return {'configured':chat.model.configured()}
+    label = await chat.model.active() if hasattr(chat.model, 'active') else getattr(chat.model, 'label', None)
+    return {'configured':chat.model.configured(),'model':label}
 
 @app.post('/api/chat/message')
 async def chat_message(request:Request):

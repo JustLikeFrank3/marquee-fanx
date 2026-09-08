@@ -94,7 +94,9 @@ def test_chat_route_validates_and_reports_unconfigured(monkeypatch):
     monkeypatch.delenv('OPENAI_API_KEY',raising=False)
     with TestClient(app,base_url='http://127.0.0.1:8000') as client:
         token=client.post('/api/session').json()['session_id']
-        assert client.get('/api/chat/status').json()=={'configured':False}
+        status=client.get('/api/chat/status').json()
+        assert status['configured'] is False
+        assert status['model'].startswith('OpenAI')
         headers={'X-Marquee-Session':token}
         assert client.post('/api/chat/message',json=request().model_dump(mode='json'),headers=headers).status_code==503
         assert client.post('/api/chat/message',json={'message':'hi'},headers=headers).status_code==422

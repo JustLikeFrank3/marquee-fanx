@@ -5,6 +5,10 @@ from urllib.parse import urlparse
 
 
 class FoundryModel:
+    @property
+    def label(self):
+        return 'Azure Foundry \u00b7 ' + os.getenv('FOUNDRY_AGENT_NAME', '')
+
     def configured(self):
         endpoint = os.getenv('FOUNDRY_PROJECT_ENDPOINT','')
         parsed = urlparse(endpoint)
