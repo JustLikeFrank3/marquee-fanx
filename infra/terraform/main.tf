@@ -64,7 +64,14 @@ resource "azurerm_role_assignment" "acr_pull" {
 # Lets the app call the existing Foundry project agent via managed identity.
 resource "azurerm_role_assignment" "foundry_user" {
   scope                = "${data.azurerm_resource_group.marquee.id}/providers/Microsoft.CognitiveServices/accounts/${var.foundry_account_name}"
-  role_definition_name = "Azure AI User"
+  role_definition_name = "Azure AI Developer"
+  principal_id         = azurerm_user_assigned_identity.app.principal_id
+}
+
+# Azure AI Developer lacks AIServices/* data actions, which the Foundry agents API requires.
+resource "azurerm_role_assignment" "foundry_data" {
+  scope                = "${data.azurerm_resource_group.marquee.id}/providers/Microsoft.CognitiveServices/accounts/${var.foundry_account_name}"
+  role_definition_name = "Cognitive Services User"
   principal_id         = azurerm_user_assigned_identity.app.principal_id
 }
 

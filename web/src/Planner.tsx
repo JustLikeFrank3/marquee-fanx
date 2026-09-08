@@ -34,7 +34,11 @@ export default function Planner({context,onResults}:{context:Search&{budget_usd:
       setMessages(prev=>[...prev,{role:'user',text:message},{role:'assistant',text:result.reply,actions:result.actions,report:result.report,nearby:result.nearby,results:result.results}].slice(-16) as Message[]);
       setInput('');setReset(false);
       if(result.results)onResults(result.results,result.report);
-    }catch(e){setError((e as Error).message);}finally{setBusy(false);}
+    }catch(e){
+      // Keep the failed prompt visible and editable so a transient error costs nothing.
+      setMessages(prev=>[...prev,{role:'user',text:message}].slice(-16) as Message[]);
+      setError((e as Error).message);
+    }finally{setBusy(false);}
   }
   return <section className="wrap planner-section" aria-labelledby="planner-title">
     <div className="planner"><div className="planner-intro"><p className="eyebrow orange">MEET YOUR NIGHT-OUT ASSISTANT</p><h2 id="planner-title">Say what sounds good.</h2><p>Tell Marquee what you’re in the mood for. Ask follow-up questions, compare options, and find your next night out.</p><span className="eyebrow">{configured===null?'CHECKING CONNECTION':configured?'AI + EVENT TOOLS':'AI CONNECTION NEEDED'}</span></div>
